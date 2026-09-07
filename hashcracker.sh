@@ -490,7 +490,12 @@ if [[ "$cracked_after" -lt "$TOTAL_HASHES" ]]; then
         label="lote pequeño fusionado (${#existing_small[@]} listas: ${names%, })"
         info "Probando: $label"
         TRIED+=("$label")
-        cat "${existing_small[@]}" | run_hashcat_filtered -m "$MODE" -a 0 -O "${SPEED_FLAGS[@]}" --quiet "$HASHFILE" - --potfile-path "$POTFILE"
+        # Sin argumento de diccionario: hashcat lee el wordlist directamente
+        # de stdin cuando no se le da ninguno (igual que "crunch ... | hashcat
+        # -a 0 -m 0 hash.txt"). Pasar "-" literal falla con "No such file or
+        # directory" porque hashcat lo trata como nombre de fichero, no como
+        # marcador de stdin.
+        cat "${existing_small[@]}" | run_hashcat_filtered -m "$MODE" -a 0 -O "${SPEED_FLAGS[@]}" --quiet "$HASHFILE" --potfile-path "$POTFILE"
         hc_exit=$?
         if [[ "$hc_exit" -ne 0 && "$hc_exit" -ne 1 ]]; then
             err "hashcat devolvió un código de salida inesperado ($hc_exit) con el lote pequeño — revisa el error de arriba."
