@@ -290,14 +290,36 @@ detectar_automatico() {
     # vía NO da ningún candidato — si hashcat --identify ya acierta, sobra
     # gastar tiempo (y ruido en pantalla) con las otras dos.
     echo -e "${C_BOLD}--- hashcat --identify ---${C_RESET}"
-    local hc_identify_result
-    hc_identify_result=$($TO hashcat --identify "$SAMPLE_HASH" </dev/null 2>/dev/null \
-        | awk -F'|' '/^[[:space:]]*[0-9]+[[:space:]]*\|/{
-            gsub(/^[ \t]+|[ \t]+$/,"",$1); gsub(/^[ \t]+|[ \t]+$/,"",$2);
-            printf "[-m %-6s] %s\n", $1, $2
-        }')
+    local hc_identify_result hc_identify_fn
+    hc_identify_fn() {
+        $TO hashcat --identify "$1" </dev/null 2>/dev/null \
+            | awk -F'|' '/^[[:space:]]*[0-9]+[[:space:]]*\|/{
+                gsub(/^[ \t]+|[ \t]+$/,"",$1); gsub(/^[ \t]+|[ \t]+$/,"",$2);
+                printf "[-m %-6s] %s\n", $1, $2
+            }'
+    }
+    hc_identify_result=$(hc_identify_fn "$SAMPLE_HASH")
+    # A hashcat --identify no le gusta un prefijo "usuario:" delante del hash
+    # (formato típico de hashdump/secretsdump: "Administrator:5c4d...") — lo
+    # trata como parte de la estructura y no reconoce nada. Si la línea
+    # completa falla, reintenta quitando solo lo de antes de los PRIMEROS
+    # dos puntos, dejando intacto el resto por si el propio hash necesita más
+    # ":" en su formato (NetNTLMv2, DCC con dominio, etc.).
+    if [[ -z "$hc_identify_result" && "$SAMPLE_HASH" == *:* ]]; then
+        local sin_usuario="${SAMPLE_HASH#*:}"
+        hc_identify_result=$(hc_identify_fn "$sin_usuario")
+        if [[ -n "$hc_identify_result" ]]; then
+            info "No reconocido con el usuario delante — reintentado quitando el prefijo antes de los primeros \":\" (formato típico usuario:hash) y SÍ ha dado candidatos:"
+        fi
+    fi
     if [[ -n "$hc_identify_result" ]]; then
-        limitar_candidatos "$hc_identify_result" 8
+        # Límite más alto que en hashid/nth (8): un hash de 32/40/64 hex tiene
+        # DECENAS de modos hashcat estructuralmente idénticos (variantes
+        # compuestas tipo md5(md5($pass)), md5(sha1($pass))...), y el modo
+        # más probable en pentesting (NTLM, MD5 plano...) puede caer más
+        # abajo en la lista de hashcat que esas variantes menos comunes — con
+        # el límite de 8 se estaba quedando fuera justo el candidato bueno.
+        limitar_candidatos "$hc_identify_result" 20
     else
         warn "hashcat --identify no ha reconocido ningún modo para este hash."
     fi
