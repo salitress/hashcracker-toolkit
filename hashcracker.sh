@@ -283,44 +283,63 @@ detectar_automatico() {
     # quede colgada esperando al terminal) y, si no saca nada, por stdin
     # (cat hash | tool) — algunas herramientas solo funcionan de una forma.
 
-    if [[ "$HAS_HASHID" -eq 1 ]]; then
-        echo -e "${C_BOLD}--- hashid ---${C_RESET}"
-        # Sin -e (extended): -e lista TODOS los tipos que casan por longitud
-        # (30+ líneas en un hash de 32 hex). Sin ella, hashid ya prioriza los
-        # más probables. Por si acaso, igualmente se recorta con limitar_candidatos.
-        result=$($TO hashid -m "$SAMPLE_HASH" </dev/null 2>/dev/null | grep '^\[+\]')
-        if [[ -z "$result" ]]; then
-            result=$(printf '%s\n' "$SAMPLE_HASH" | $TO hashid -m 2>/dev/null | grep '^\[+\]')
-        fi
-        if [[ -n "$result" ]]; then
-            limitar_candidatos "$result" 8
-        else
-            warn "hashid no ha detectado ningún tipo para este hash."
-        fi
-        echo
+    # hashcat --identify va primero: no depende de nada opcional (hashcat ya
+    # es dependencia obligatoria del script, comprobada al principio), así
+    # que siempre está disponible aunque el sistema no tenga hashid ni
+    # name-that-hash instalados. hashid/nth solo se lanzan si esta primera
+    # vía NO da ningún candidato — si hashcat --identify ya acierta, sobra
+    # gastar tiempo (y ruido en pantalla) con las otras dos.
+    echo -e "${C_BOLD}--- hashcat --identify ---${C_RESET}"
+    local hc_identify_result
+    hc_identify_result=$($TO hashcat --identify "$SAMPLE_HASH" </dev/null 2>/dev/null \
+        | awk -F'|' '/^[[:space:]]*[0-9]+[[:space:]]*\|/{
+            gsub(/^[ \t]+|[ \t]+$/,"",$1); gsub(/^[ \t]+|[ \t]+$/,"",$2);
+            printf "[-m %-6s] %s\n", $1, $2
+        }')
+    if [[ -n "$hc_identify_result" ]]; then
+        limitar_candidatos "$hc_identify_result" 8
     else
-        warn "hashid no está instalado (apt install hashid)."
+        warn "hashcat --identify no ha reconocido ningún modo para este hash."
     fi
+    echo
 
-    if [[ "$HAS_NTH" -eq 1 ]]; then
-        echo -e "${C_BOLD}--- name-that-hash (nth) ---${C_RESET}"
-        result=$($TO nth -t "$SAMPLE_HASH" </dev/null 2>/dev/null | awk '/^Most Likely/{f=1;next} /^$/{f=0} f')
-        if [[ -z "$result" ]]; then
-            result=$(printf '%s\n' "$SAMPLE_HASH" | $TO nth 2>/dev/null | awk '/^Most Likely/{f=1;next} /^$/{f=0} f')
-        fi
-        if [[ -n "$result" ]]; then
-            limitar_candidatos "$result" 8
-        else
-            warn "name-that-hash no ha detectado ningún tipo para este hash."
-        fi
-        echo
+    if [[ -n "$hc_identify_result" ]]; then
+        info "hashcat --identify ya ha dado candidatos — me salto hashid/name-that-hash (usa la opción 1/manual si quieres verlos igualmente)."
     else
-        warn "name-that-hash no está instalado (pipx install name-that-hash)."
-    fi
+        if [[ "$HAS_HASHID" -eq 1 ]]; then
+            echo -e "${C_BOLD}--- hashid ---${C_RESET}"
+            # Sin -e (extended): -e lista TODOS los tipos que casan por longitud
+            # (30+ líneas en un hash de 32 hex). Sin ella, hashid ya prioriza los
+            # más probables. Por si acaso, igualmente se recorta con limitar_candidatos.
+            result=$($TO hashid -m "$SAMPLE_HASH" </dev/null 2>/dev/null | grep '^\[+\]')
+            if [[ -z "$result" ]]; then
+                result=$(printf '%s\n' "$SAMPLE_HASH" | $TO hashid -m 2>/dev/null | grep '^\[+\]')
+            fi
+            if [[ -n "$result" ]]; then
+                limitar_candidatos "$result" 8
+            else
+                warn "hashid no ha detectado ningún tipo para este hash."
+            fi
+            echo
+        else
+            warn "hashid no está instalado (apt install hashid)."
+        fi
 
-    if [[ "$HAS_HASHID" -eq 0 && "$HAS_NTH" -eq 0 ]]; then
-        err "Ninguna herramienta de detección está instalada. Elige el modo manualmente."
-        return 1
+        if [[ "$HAS_NTH" -eq 1 ]]; then
+            echo -e "${C_BOLD}--- name-that-hash (nth) ---${C_RESET}"
+            result=$($TO nth -t "$SAMPLE_HASH" </dev/null 2>/dev/null | awk '/^Most Likely/{f=1;next} /^$/{f=0} f')
+            if [[ -z "$result" ]]; then
+                result=$(printf '%s\n' "$SAMPLE_HASH" | $TO nth 2>/dev/null | awk '/^Most Likely/{f=1;next} /^$/{f=0} f')
+            fi
+            if [[ -n "$result" ]]; then
+                limitar_candidatos "$result" 8
+            else
+                warn "name-that-hash no ha detectado ningún tipo para este hash."
+            fi
+            echo
+        else
+            warn "name-that-hash no está instalado (pipx install name-that-hash)."
+        fi
     fi
 
     echo
