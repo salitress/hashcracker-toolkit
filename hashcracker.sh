@@ -403,24 +403,35 @@ esac
 
 ok "Modo hashcat seleccionado: -m $MODE"
 
-# Vista previa del formato esperado, para poder comparar visualmente con tu hash
+# Vista previa del formato esperado, para poder comparar visualmente con tu hash.
+# hashcat imprime estos campos con sangría (no en la columna 0) y el nombre de
+# los campos ha cambiado entre versiones (antes "Hash-Mode"/"Hash-Name", ahora
+# "Name"/"Example.Hash.Format"/"Example.Hash"/"Example.Pass") — por eso se
+# busca "example" en cualquier posición de la línea (sin anclar al principio,
+# sin distinguir mayúsculas) y se recorta la sangría para que quede legible.
 if hashcat -m "$MODE" --example-hashes &>/dev/null; then
-    echo
-    info "Formato de ejemplo para -m $MODE (compáralo con tu hash):"
-    hashcat -m "$MODE" --example-hashes 2>/dev/null | grep -E '^Hash-Mode|^Example' | head -n 4
+    ejemplo=$(hashcat -m "$MODE" --example-hashes 2>/dev/null | grep -iE 'example' | sed 's/^[[:space:]]*//')
+    if [[ -n "$ejemplo" ]]; then
+        echo
+        info "Formato de ejemplo para -m $MODE (compáralo con tu hash):"
+        printf '%s\n' "$ejemplo" | head -n 4
+    fi
 fi
 
 read -rp $'\n¿Continuar con el cracking? [Y/n]: ' seguir
 [[ "$seguir" =~ ^[Nn]$ ]] && exit 0
 
-# ───────────────────────── Extra: reglas sobre rockyou ─────────────────────────
+# ───────────────────────── Extra: reglas sobre las listas más rentables ─────────────────────────
 # Aplicado por defecto si hay fichero de reglas disponible: cuesta poco tiempo
 # extra y añade variantes (mayúsculas, años, leetspeak...) que las wordlists
-# planas no cubren.
+# planas no cubren. Solo se aplica donde el coste sigue siendo bajo — el lote
+# pequeño fusionado, rockyou y la lista grande más pequeña (Pwdb_top-100000)
+# — nunca sobre las listas grandes de millones de entradas, donde ×64-66
+# dispara el tiempo sin aportar mucho más que rockyou+reglas.
 USE_RULES="n"
 if [[ -n "$RULES_FILE" ]]; then
     USE_RULES="y"
-    ok "Reglas ($(basename "$RULES_FILE")) se aplicarán sobre rockyou.txt si las wordlists planas no bastan."
+    ok "Reglas ($(basename "$RULES_FILE")) se aplicarán sobre el lote pequeño, rockyou.txt y Pwdb_top-100000 si las wordlists planas no bastan."
 else
     warn "No se ha encontrado best64.rule ni best66.rule — se salta el pase con reglas."
 fi
@@ -543,6 +554,23 @@ if [[ "$cracked_after" -lt "$TOTAL_HASHES" ]]; then
         fi
         cracked_after=$(contar_crackeados)
         ok "Crackeados hasta ahora: $cracked_after / $TOTAL_HASHES"
+
+        # Reglas sobre el mismo lote fusionado: barato (listas de pocos KB,
+        # el ×64-66 de mutaciones apenas cuesta tiempo extra) y es donde más
+        # valor añade — corporate_passwords.txt/seasons.txt/months.txt
+        # mangladas cubren patrones tipo "Empresa2026!" o "Summer26" que la
+        # lista plana no tiene.
+        if [[ "$USE_RULES" == "y" && "$cracked_after" -lt "$TOTAL_HASHES" ]]; then
+            info "Probando lote pequeño fusionado + reglas $(basename "$RULES_FILE")..."
+            TRIED+=("$label + $(basename "$RULES_FILE")")
+            cat "${existing_small[@]}" | run_hashcat_filtered -m "$MODE" -a 0 -O "${SPEED_FLAGS[@]}" --quiet "$HASHFILE" -r "$RULES_FILE" --potfile-path "$POTFILE"
+            hc_exit=$?
+            if [[ "$hc_exit" -ne 0 && "$hc_exit" -ne 1 ]]; then
+                err "hashcat devolvió un código de salida inesperado ($hc_exit) con el lote pequeño + reglas — revisa el error de arriba."
+            fi
+            cracked_after=$(contar_crackeados)
+            ok "Crackeados hasta ahora: $cracked_after / $TOTAL_HASHES"
+        fi
     fi
 fi
 
@@ -570,6 +598,26 @@ if [[ "$USE_RULES" == "y" && "$cracked_after" -lt "$TOTAL_HASHES" && -f "$ROCKYO
         err "hashcat devolvió un código de salida inesperado ($hc_exit) con rockyou+reglas — revisa el error de arriba."
     fi
     TRIED+=("rockyou.txt + $(basename "$RULES_FILE")")
+    cracked_after=$(contar_crackeados)
+fi
+
+# Pase extra opcional con reglas sobre la lista grande más pequeña
+# (Pwdb_top-100000, ~100k entradas): si rockyou+reglas no ha bastado, esta
+# lista sale de un dataset distinto (leaks agregados, no solo rockyou), así
+# que las mismas reglas sobre ella pueden pillar algo que rockyou+reglas no
+# tenía en su base. Se para aquí y no se repite en el resto de listas
+# grandes — Pwdb_top-1000000 × reglas ya son ~66.000M candidatos, demasiado
+# caro para un paso "por si acaso".
+PWDB_100K="/usr/share/seclists/Passwords/Common-Credentials/Pwdb_top-100000.txt"
+if [[ "$USE_RULES" == "y" && "$cracked_after" -lt "$TOTAL_HASHES" && -f "$PWDB_100K" ]]; then
+    info "Probando $(basename "$PWDB_100K") + reglas $(basename "$RULES_FILE")..."
+    run_hashcat_filtered -m "$MODE" -a 0 -O "${SPEED_FLAGS[@]}" --quiet "$HASHFILE" "$PWDB_100K" -r "$RULES_FILE" --potfile-path "$POTFILE"
+    hc_exit=$?
+    if [[ "$hc_exit" -ne 0 && "$hc_exit" -ne 1 ]]; then
+        err "hashcat devolvió un código de salida inesperado ($hc_exit) con $(basename "$PWDB_100K")+reglas — revisa el error de arriba."
+    fi
+    TRIED+=("$(basename "$PWDB_100K") + $(basename "$RULES_FILE")")
+    cracked_after=$(contar_crackeados)
 fi
 
 # ───────────────────────── Resultados ─────────────────────────

@@ -13,7 +13,7 @@ Asistente interactivo en bash (`hashcracker.sh`) para identificar y crackear has
    - `rockyou.txt` siempre primero y por separado.
    - Wordlists pequeñas (hasta ~1MB: top-común, darkweb, seasons, months, corporate, John, NCSC, fortinet...) fusionadas en **un único pase** de hashcat (dictionary por stdin) para no pagar un reinicio+compilación de kernel por cada fichero diminuto.
    - Wordlists grandes (cientos de miles a millones de contraseñas) probadas una a una, para saber cuál exactamente dio con la contraseña.
-   - Pase extra opcional con reglas (`best64.rule`/`best66.rule`, el que exista) sobre `rockyou.txt` si nada más ha funcionado.
+   - Pase extra opcional con reglas (`best64.rule`/`best66.rule`, el que exista) sobre el lote pequeño fusionado, `rockyou.txt` y `Pwdb_top-100000.txt` si el pase plano no ha bastado en cada uno — se queda ahí porque en el resto de wordlists grandes (hasta 10M de contraseñas) el ×64-66 de mutaciones dispara el tiempo sin aportar mucho más que rockyou+reglas.
    - Corta en cuanto todos los hashes del fichero están crackeados.
 4. **Resultado final**: hashes crackeados (usuario:hash:plain), qué wordlists se probaron/omitieron, y sugerencias si algo queda pendiente (reglas más agresivas, wordlists de contexto, mask attack).
 
