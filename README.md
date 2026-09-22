@@ -7,7 +7,7 @@ Asistente interactivo en bash (`hashcracker.sh`) para identificar y crackear has
 1. **Entrada de hashes** — pega un hash suelto, indica un fichero con uno o varios, o pásalo como argumento (`./hashcracker.sh archivo.hash` o `./hashcracker.sh <hash>`).
 2. **Identificación del tipo de hash**, tres caminos:
    - Menú manual: **top 10** más habituales en pentesting (NTLM, NetNTLMv2, MD5, SHA1, SHA2-256/512, sha512crypt/md5crypt, bcrypt, Kerberoast RC4) → opción para ver **otros 25** (AS-REP Roast, Kerberoast AES128/256, NetNTLMv1, LM, MSCache/DCC, WPA-PMKID+EAPOL, 7-Zip, RAR, KeePass, MSSQL, etc.) → opción para introducir el código `-m` exacto.
-   - **Detección automática** con `hashid` y `name-that-hash` (si están instalados), con reintento por stdin para herramientas que no aceptan el hash como argumento, timeout de seguridad, y recorte de candidatos cuando un hash ambiguo (32/40/64 hex) devuelve decenas de tipos posibles.
+   - **Detección automática** con `hashcat --identify` (siempre disponible, hashcat ya es dependencia obligatoria) más `hashid` y `name-that-hash` (si están instalados), con reintento por stdin para herramientas que no aceptan el hash como argumento, timeout de seguridad, y recorte de candidatos cuando un hash ambiguo (32/40/64 hex) devuelve decenas de tipos posibles.
    - Vista previa del formato esperado (`hashcat --example-hashes`) para comparar visualmente antes de lanzar nada.
 3. **Cracking por wordlists, de más a menos frecuente**:
    - `rockyou.txt` siempre primero y por separado.
