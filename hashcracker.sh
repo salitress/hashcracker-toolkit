@@ -418,6 +418,21 @@ if hashcat -m "$MODE" --example-hashes &>/dev/null; then
     fi
 fi
 
+# Validación temprana: si hashcat no puede ni parsear el fichero de hashes
+# con el modo elegido (formato equivocado, prefijos que sobran como "*" en
+# hashes MySQL, espacios, usuario mal quitado...) "--show" no se queda en
+# silencio: imprime un texto de error tipo "Token length exception" por
+# stdout. Sin este chequeo, ese texto se cuela más abajo en
+# contar_crackeados() como si fueran hashes "ya crackeados" y el script se
+# salta el cracking entero pensando que ya ha terminado.
+validacion=$(hashcat -m "$MODE" "$HASHFILE" --show --potfile-path "$POTFILE" 2>&1)
+if grep -qi 'exception' <<< "$validacion"; then
+    err "hashcat no puede interpretar el fichero de hashes con -m $MODE:"
+    printf '%s\n' "$validacion" | grep -vE '^[[:space:]]*$'
+    err "Revisa el formato comparándolo con el ejemplo de arriba (prefijos de más como '*', espacios, usuario sin quitar del todo...) y vuelve a lanzar el script con el modo correcto."
+    exit 1
+fi
+
 read -rp $'\n¿Continuar con el cracking? [Y/n]: ' seguir
 [[ "$seguir" =~ ^[Nn]$ ]] && exit 0
 
